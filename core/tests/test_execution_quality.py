@@ -297,12 +297,14 @@ class TestExecutionQuality:
                     source="flaky1",
                     target="flaky2",
                     condition=EdgeCondition.ON_SUCCESS,
+                    debug=True,  # Enable debug mode for testing
                 ),
                 EdgeSpec(
                     id="e2",
                     source="flaky2",
                     target="success",
                     condition=EdgeCondition.ON_SUCCESS,
+                    debug=True,  # Enable debug mode for testing
                 ),
             ],
             entry_node="flaky1",
@@ -358,6 +360,80 @@ class TestExecutionQuality:
         )
         assert failed.is_clean_success is False
         assert failed.is_degraded_success is False
+
+    async def test_node_debug_logging(self, tmp_path, caplog):
+        """Test that NodeSpec debug flag enables node-level debug logging (LLMNode)."""
+        runtime = Runtime(tmp_path)
+        goal = Goal(
+            id="debug-test",
+            name="Debug Test",
+            description="Test node debug logging",
+            success_criteria=[
+                SuccessCriterion(
+                    id="works",
+                    description="Works",
+                    metric="output_equals",
+                    target="success",
+                )
+            ],
+        )
+
+        from framework.graph.node import LLMNode
+
+        graph = GraphSpec(
+            id="debug-graph",
+            goal_id=goal.id,
+            nodes=[
+                NodeSpec(
+                    id="debug-node",
+                    name="Debug Node",
+                    description="Node with debug enabled",
+                    node_type="llm_tool_use",
+                    output_keys=["result"],
+                    debug=True,
+                ),
+            ],
+            edges=[],
+            entry_node="debug-node",
+            terminal_nodes=["debug-node"],
+        )
+
+        class DummyLLM:
+            def complete(self, *args, **kwargs):
+                class Response:
+                    content = '{"result": "debug success"}'
+                    input_tokens = 0
+                    output_tokens = 0
+                    stop_reason = ""
+                return Response()
+            def complete_with_tools(self, *args, **kwargs):
+                return self.complete()
+
+        class DebugLLMNode(LLMNode):
+            require_tools = False
+            tool_executor = None
+            def _build_messages(self, ctx):
+                return [{"role": "user", "content": "test"}]
+            def _build_system_prompt(self, ctx):
+                return "system"
+            def _compact_inputs(self, ctx, system, messages, tools):
+                return messages
+            async def execute(self, ctx):
+                ctx.llm = DummyLLM()
+                return await super().execute(ctx)
+
+        executor = GraphExecutor(
+            runtime=runtime,
+            node_registry={"debug-node": DebugLLMNode()},
+        )
+
+        # Only use DebugLLMNode for LLM injection; remove obsolete patching code
+        with caplog.at_level("INFO"):
+            result = await executor.execute(graph, goal)
+
+        debug_logs = [r for r in caplog.records if "[DEBUG] Node Execution Trace" in r.getMessage()]
+        assert any(debug_logs), "Debug logging should be present when NodeSpec.debug is True"
+        assert result.success is True
 
 
 if __name__ == "__main__":

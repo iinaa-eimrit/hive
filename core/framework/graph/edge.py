@@ -97,6 +97,8 @@ class EdgeSpec(BaseModel):
 
     model_config = {"extra": "allow"}
 
+    debug: bool = False  # Enable verbose debugging logs
+
     def should_traverse(
         self,
         source_success: bool,
@@ -157,43 +159,40 @@ class EdgeSpec(BaseModel):
     ) -> bool:
         """Evaluate a conditional expression."""
         import logging
-
         logger = logging.getLogger(__name__)
 
         if not self.condition_expr:
+            if self.debug:
+                logger.debug(f"Edge {self.id}: No condition_expr, defaulting to True.")
             return True
 
-        # Build evaluation context
-        # Include memory keys directly for easier access in conditions
         context = {
             "output": output,
             "memory": memory,
             "result": output.get("result"),
-            "true": True,  # Allow lowercase true/false in conditions
+            "true": True,
             "false": False,
-            **memory,  # Unpack memory keys directly into context
+            **memory,
         }
 
         try:
-            # Safe evaluation using AST-based whitelist
             result = bool(safe_eval(self.condition_expr, context))
-            # Log the evaluation for visibility
-            # Extract the variable names used in the expression for debugging
             expr_vars = {
                 k: repr(context[k])
                 for k in context
                 if k not in ("output", "memory", "result", "true", "false")
                 and k in self.condition_expr
             }
-            logger.info(
-                "  Edge %s: condition '%s' → %s  (vars: %s)",
-                self.id,
-                self.condition_expr,
-                result,
-                expr_vars or "none matched",
-            )
+            if self.debug:
+                logger.debug(
+                    f"Edge {self.id}: condition '{self.condition_expr}' → {result}  (vars: {expr_vars or 'none matched'})"
+                )
             return result
         except Exception as e:
+            if self.debug:
+                logger.debug(f"Edge {self.id}: ⚠ Condition evaluation failed: {self.condition_expr}")
+                logger.debug(f"Edge {self.id}: Error: {e}")
+                logger.debug(f"Edge {self.id}: Available context keys: {list(context.keys())}")
             logger.warning(f"      ⚠ Condition evaluation failed: {self.condition_expr}")
             logger.warning(f"         Error: {e}")
             logger.warning(f"         Available context keys: {list(context.keys())}")
@@ -260,20 +259,22 @@ Respond with ONLY a JSON object:
                 proceed = data.get("proceed", False)
                 reasoning = data.get("reasoning", "")
 
-                # Log the decision (using basic print for now)
                 import logging
-
                 logger = logging.getLogger(__name__)
+                if getattr(self, "debug", False):
+                    logger.debug(f"Edge {self.id}: LLM prompt:\n{prompt}")
+                    logger.debug(f"Edge {self.id}: LLM response: {response.content}")
+                    logger.debug(f"Edge {self.id}: Routing decision: {'PROCEED' if proceed else 'SKIP'}")
+                    logger.debug(f"Edge {self.id}: Reason: {reasoning}")
                 logger.info(f"      🤔 LLM routing decision: {'PROCEED' if proceed else 'SKIP'}")
                 logger.info(f"         Reason: {reasoning}")
-
                 return proceed
 
         except Exception as e:
-            # Fallback: proceed on success
             import logging
-
             logger = logging.getLogger(__name__)
+            if getattr(self, "debug", False):
+                logger.debug(f"Edge {self.id}: ⚠ LLM routing failed, defaulting to on_success: {e}")
             logger.warning(f"      ⚠ LLM routing failed, defaulting to on_success: {e}")
             return source_success
 

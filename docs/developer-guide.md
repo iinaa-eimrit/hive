@@ -125,11 +125,40 @@ PYTHONPATH=exports uv run python -m your_agent_name validate
 
 ```
 hive/                                    # Repository root
+## Debugging Mode Issue Workflow Example
+
+This section documents a real workflow for raising, planning, and solving a feature issue: extending debugging mode to node execution for granular tracing.
+
+### 1. Issue Raised
+- Identified missing debugging mode for agent graph execution and node-level tracing.
+- Raised a GitHub issue describing the need for step-by-step debug logs and granular tracing at node execution.
 │
+### 2. Planning & Research
+- Reviewed codebase for existing debug flags (EdgeSpec) and logging patterns.
+- Designed architecture to add a `debug` flag to `NodeSpec` for node-level debug control.
+- Planned to enhance logging in node execution logic (e.g., LLMNode, function nodes).
 ├── .github/                             # GitHub configuration
+### 3. Implementation
+- Added `debug: bool = Field(default=False, description="Enable debug logging for this node.")` to `NodeSpec` in `core/framework/graph/node.py`.
+- Updated `LLMNode.execute()` to emit detailed debug logs when `NodeSpec.debug` is `True`.
+- Example debug log output:
+  - `🐞 [DEBUG] Node Execution Trace:`
+  - Node name, type, input, system prompt, user message, tools available
+- Ensured debug logs are only emitted for nodes with `debug=True`.
 │   ├── workflows/
+### 4. Testing
+- Added a test in `core/tests/test_execution_quality.py` to verify debug logging:
+  - Created a graph with a node having `debug=True`.
+  - Used a dummy LLM provider to simulate execution.
+  - Asserted that debug logs are present in captured output.
+- Ran all tests with `pytest` and confirmed debug logging works as intended.
 │   │   ├── ci.yml                       # Lint, test, validate on every PR
+### 5. Outcome
+- Node-level debugging mode is now available for granular tracing.
+- Developers can enable `debug=True` on any node for step-by-step logs.
+- All changes are documented, tested, and ready for PR assignment.
 │   │   ├── release.yml                  # Runs on tags
+---
 │   │   ├── pr-requirements.yml          # PR requirement checks
 │   │   ├── pr-check-command.yml         # PR check commands
 │   │   ├── claude-issue-triage.yml      # Automated issue triage
@@ -616,6 +645,19 @@ echo 'ANTHROPIC_API_KEY=your-key-here' >> .env
 ### Debugging Agent Execution
 
 ```python
+# Enable debugging mode for agent edges
+from framework.graph.edge import EdgeSpec
+
+# Example: create an edge with debug mode enabled
+edge = EdgeSpec(
+  id="example-edge",
+  source="node_a",
+  target="node_b",
+  condition="conditional",
+  condition_expr="output.value > 0",
+  debug=True  # Enable verbose debugging logs
+)
+
 # Add debug logging to your agent
 import logging
 logging.basicConfig(level=logging.DEBUG)
@@ -626,6 +668,8 @@ PYTHONPATH=exports uv run python -m agent_name run --input '{...}' --verbose
 # Use mock mode to test without LLM calls
 PYTHONPATH=exports uv run python -m agent_name run --mock --input '{...}'
 ```
+
+When `debug=True` is set on an edge, step-by-step execution tracing and detailed logs will be output for condition evaluation and LLM-based routing decisions. This helps you inspect agent workflow, variable values, and errors during development.
 
 ---
 

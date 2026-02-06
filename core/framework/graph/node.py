@@ -57,20 +57,21 @@ def _fix_unescaped_newlines_in_json(json_str: str) -> str:
             result.append(char)
             i += 1
             continue
-
-        if char == '"' and not escape_next:
-            in_string = not in_string
-            result.append(char)
-            i += 1
-            continue
-
-        # Fix unescaped newlines inside strings
-        if in_string and char == "\n":
-            result.append("\\n")
-            i += 1
-            continue
-
-        # Fix unescaped carriage returns inside strings
+            if debug_mode:
+                logger.info("      🐞 [DEBUG] Node Execution Trace:")
+                logger.info(f"         Node: {ctx.node_spec.name} (id={ctx.node_spec.id})")
+                logger.info(f"         Type: {ctx.node_spec.node_type}")
+                logger.info(f"         Input: {ctx.input_data}")
+                logger.info(f"         System: {system[:150]}..." if len(system) > 150 else f"         System: {system}")
+                logger.info(f"         User message: {messages[-1]['content'][:150]}..." if len(messages[-1]["content"]) > 150 else f"         User message: {messages[-1]['content']}")
+                if ctx.available_tools:
+                    logger.info(f"         Tools available: {[t.name for t in ctx.available_tools]}")
+            else:
+                logger.info("      🤖 LLM Call:")
+                logger.info(f"         System: {system[:150]}..." if len(system) > 150 else f"         System: {system}")
+                logger.info(f"         User message: {messages[-1]['content'][:150]}..." if len(messages[-1]["content"]) > 150 else f"         User message: {messages[-1]['content']}")
+                if ctx.available_tools:
+                    logger.info(f"         Tools available: {[t.name for t in ctx.available_tools]}")
         if in_string and char == "\r":
             result.append("\\r")
             i += 1
@@ -236,6 +237,10 @@ class NodeSpec(BaseModel):
     client_facing: bool = Field(
         default=False,
         description="If True, this node streams output to the end user and can request input.",
+    )
+    debug: bool = Field(
+        default=False,
+        description="Enable debug logging for this node. When True, node execution will log detailed trace information.",
     )
 
     model_config = {"extra": "allow", "arbitrary_types_allowed": True}
@@ -824,6 +829,8 @@ Keep the same JSON structure but with shorter content values.
         """Execute the LLM node."""
         import time
 
+        debug_mode = getattr(ctx.node_spec, "debug", False)
+
         if ctx.llm is None:
             return NodeResult(success=False, error="LLM not available")
 
@@ -866,19 +873,22 @@ Keep the same JSON structure but with shorter content values.
             messages = self._compact_inputs(ctx, system, messages, ctx.available_tools)
 
             # Log the LLM call details
-            logger.info("      🤖 LLM Call:")
-            logger.info(
-                f"         System: {system[:150]}..."
-                if len(system) > 150
-                else f"         System: {system}"
-            )
-            logger.info(
-                f"         User message: {messages[-1]['content'][:150]}..."
-                if len(messages[-1]["content"]) > 150
-                else f"         User message: {messages[-1]['content']}"
-            )
-            if ctx.available_tools:
-                logger.info(f"         Tools available: {[t.name for t in ctx.available_tools]}")
+            if debug_mode:
+                logger.info("      🐞 [DEBUG] Node Execution Trace:")
+                logger.info(f"         Node: {ctx.node_spec.name} (id={ctx.node_spec.id})")
+                logger.info(f"         Type: {ctx.node_spec.node_type}")
+                logger.info(f"         Input: {ctx.input_data}")
+                logger.info(f"         System: {system[:150]}..." if len(system) > 150 else f"         System: {system}")
+                logger.info(f"         User message: {messages[-1]['content'][:150]}..." if len(messages[-1]["content"]) > 150 else f"         User message: {messages[-1]['content']}")
+                if ctx.available_tools:
+                    logger.info(f"         Tools available: {[t.name for t in ctx.available_tools]}")
+            else:
+                logger.info("      🤖 LLM Call:")
+                logger.info(f"         System: {system[:150]}..." if len(system) > 150 else f"         System: {system}")
+                logger.info(f"         User message: {messages[-1]['content'][:150]}..." if len(messages[-1]["content"]) > 150 else f"         User message: {messages[-1]['content']}")
+                if ctx.available_tools:
+                    logger.info(f"         Tools available: {[t.name for t in ctx.available_tools]}")
+            # Removed unmatched parenthesis and duplicate logging
 
             # Call LLM
             if ctx.available_tools and self.tool_executor:
